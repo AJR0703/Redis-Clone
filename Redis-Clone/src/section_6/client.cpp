@@ -64,3 +64,17 @@ static int32_t write_all(int fd, const uint8_t *buf, size_t n) {
     }
     return 0;
 }
+
+/**
+ * Append given number of bytes to the specified buffer.
+ *
+ * @param buf buffer to write bytes to.
+ * @param data bytes to write.
+ * @param len length of data.
+ */
+static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
+    buf.insert(buf.end(), data, data + len);
+}
+
+
+const size_t k_max_msg = 32 << 20;
