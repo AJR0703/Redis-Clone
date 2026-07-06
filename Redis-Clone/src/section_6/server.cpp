@@ -216,3 +216,52 @@ static void handle_write(Conn *conn) {
         conn->want_write = false;
     }
 }
+
+/**
+ * Read data from the connection and store in the incoming buffer.
+ * If a complete request is received, it will be processed and the response will be stored in outgoing buffer.
+ *
+ * @param conn client conn object holding connection details.
+ */
+static void handle_read(Conn *conn) {
+    // empty buffer with max size 64KB
+    uint8_t buf[64 * 1024];
+    // read data and store in buf
+    ssize_t rv = read(conn->fd, buf, sizeof(buf));
+    if (rv < 0 && errno == EAGAIN) {
+        return;
+    }
+
+    if (rv < 0) {
+        msg_errno("read() error");
+        conn->want_close = true;
+        return;
+    }
+
+    // if return value is 0, want_close will be set to true.
+    if (rv == 0) {
+        if (conn->incoming.size() == 0) {
+            // no data in the buffer.
+            msg("client closed");
+        } else {
+            // data in the buffer, but client closed connection.
+            msg("unexpected EOF");
+        }
+        conn->want_close = true;
+        return;
+    }
+
+    // append the bytes stored in the temp buffer to the incoming data buffer in the conn object.
+    buf_append(conn->incoming, buf, (size_t)rv);
+
+
+    // append data to outgoing buffer and remove from the input buffer.
+    while (try_one_request(conn)) {}
+
+    // set bools for conn object and call handle_write function.
+    if (conn->outgoing.size() > 0) {
+        conn->want_read = false;
+        conn->want_write = true;
+        return handle_write(conn);
+    }
+}
