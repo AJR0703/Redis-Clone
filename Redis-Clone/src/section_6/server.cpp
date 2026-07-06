@@ -186,3 +186,33 @@ static bool try_one_request(Conn *conn) {
     buf_consume(conn-> incoming, 4 + len);
     return true;
 }
+
+/**
+ * Writes data from the outgoing byte buffer.
+ * Allows for partial writes to prevent congestion in the event loop.
+ *
+ * @param conn conn object containing connection data.
+ */
+static void handle_write(Conn *conn) {
+    // Check to see there are bytes in the outgoing buffer.
+    assert(conn->outgoing.size() > 0);
+    // Perform write, doesn't have to be a full write.
+    ssize_t rv = write(conn->fd, &conn->outgoing[0], conn->outgoing.size());
+    if (rv < 0 && errno == EAGAIN) {
+        return;
+    }
+    if (rv < 0) {
+        msg_errno("write() error");
+        conn->want_close = true;
+        return;
+    }
+
+    // Remove written data from the buffer.
+    buf_consume(conn->outgoing, size_t(rv));
+
+    // if no data left to send, want_write bool is set to false and want_read set to true.
+    if (conn->outgoing.size() == 0) {
+        conn->want_read = true;
+        conn->want_write = false;
+    }
+}
