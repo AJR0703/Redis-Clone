@@ -109,3 +109,38 @@ static void buf_consume(std::vector<uint8_t> &buf, size_t n) {
     // removes all data in the range between the pointers provided and shifts down remaining data.
     buf.erase(buf.begin(), buf.begin() + n);
 }
+
+/**
+ * Accepts a new incoming client connection and wraps in a Conn object for the event loop to process.
+ *
+ * @param fd socket handle
+ * @return conn object or null
+ */
+static Conn *handle_accept(int fd) {
+    // Init empty sockaddr object.
+    struct sockaddr_in client_addr = {};
+    socklen_t addrlen = sizeof(client_addr);
+    // accept returns new specific client fd.
+    int connfd = accept(fd, (struct sockaddr *) &client_addr, &addrlen);
+    if (connfd < 0) {
+        msg_errno("accept() error");
+        return NULL;
+    }
+
+    // print client ip address in host byte order
+    uint32_t ip = client_addr.sin_addr.s_addr;
+    fprintf(stderr, "new client from %u.%u.%u.%u:%u",
+            ip & 255, (ip >> 8) & 255, (ip >> 16) & 255, ip >> 24 & 255,
+            ntohs(client_addr.sin_port)
+    );
+
+    // set client connection to non-blocking
+    fd_set_nb(connfd);
+
+    // wrap client address in Conn object
+    // assign the client fd to conn object and set want_read to true.
+    Conn *conn = new Conn();
+    conn->fd = connfd;
+    conn->want_read = true;
+    return conn;
+}
