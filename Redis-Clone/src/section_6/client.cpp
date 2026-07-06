@@ -78,3 +78,24 @@ static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t le
 
 
 const size_t k_max_msg = 32 << 20;
+
+
+/**
+ * Construct message to send to the server.
+ *
+ * @param fd socket handle for the socket.
+ * @param text memory address for the payload.
+ * @param len length of the text in bytes.
+ *
+ * @return return -1 if message too long, result of write_all function.
+ */
+static int32_t send_req(int fd, const uint8_t *text, size_t len) {
+    if (len > k_max_msg) {
+        return -1;
+    }
+
+    std::vector<uint8_t> wbuf;
+    buf_append(wbuf, (const uint8_t *) &len, 4);
+    buf_append(wbuf, text, len);
+    return write_all(fd, wbuf.data(), wbuf.size());
+}
