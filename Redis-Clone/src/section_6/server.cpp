@@ -265,3 +265,128 @@ static void handle_read(Conn *conn) {
         return handle_write(conn);
     }
 }
+
+
+
+int main() {
+    // create socket and store socket handle in fd
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        die("socket()");
+    }
+    int val = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val));
+
+    // configure (ip address, port, family) and bind to the socket.
+    struct sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = ntohs(1234);
+    addr.sin_addr.s_addr = ntohl(0);
+    int rv = bind(fd, (struct sockaddr *)&addr, sizeof(addr));
+    if (rv) {
+        die("bind");
+    }
+
+    // set the socket to be non-blocking
+    fd_set_nb(fd);
+
+    // listen for incoming client connections.
+    rv = listen(fd, SOMAXCONN);
+    if (rv) {
+        die("listen");
+    }
+
+    // maps fd (array index) to conn object for the connection.
+    std::vector<Conn *> fd2conn;
+
+    // array for handling poll events
+    std::vector<struct pollfd> poll_args;
+    while (true) {
+        // clears array to allow for new poll events to be constructed based on current state of conn objects.
+        poll_args.clear();
+
+        // add the listening socket first
+        struct pollfd pfd = {fd, POLLIN, 0};
+        poll_args.push_back(pfd);
+
+        // only builds pollfd entries for active client connections
+        for (Conn *conn : fd2conn) {
+            // check for valid connections and skip empty objects (handle_accept sets closed connections to NULL).
+            if (!conn) {
+                continue;
+            }
+
+            // always poll for error first to ensure there are no issues with the connection.
+            struct pollfd pfd = {conn->fd, POLLERR, 0};
+
+            // OR the POLLIN bits onto the POLLERR event.
+            if (conn->want_read) {
+                pfd.events |= POLLIN;
+            }
+
+            // OR THE POLLOUT bits onto the POLLERR event.
+            if (conn->want_write) {
+                pfd.events |= POLLOUT;
+            }
+            // add the pollfd object to the array for polling.
+            poll_args.push_back(pfd);
+        }
+
+        // call poll using the data stored in the for loop above.
+        // rv returns number of fds with events ready.
+        int rv = poll(poll_args.data(), (nfds_t)poll_args.size(), -1);
+        // interrupted check.
+        if (rv < 0 && errno == EINTR) {
+            continue;
+        }
+        // genuine error check.
+        if (rv < 0) {
+            die("poll");
+        }
+
+        // if listening socket return events is non 0, it means activity has occured on the socket.
+        if (poll_args[0].revents) {
+            // handle_accept will return a new conn object for the new client connection.
+            if (Conn *conn = handle_accept(fd)) {
+                // resize the fd mapping array to account for the new client connection.
+                if (fd2conn.size() <= (size_t)conn->fd) {
+                    fd2conn.resize(conn->fd + 1);
+                }
+                // check index is empty, then add new fd.
+                assert(!fd2conn[conn->fd]);
+                fd2conn[conn->fd] = conn;
+            }
+        }
+
+        // data from the client connection is read and written to here.
+        for (size_t i = 1; i < poll_args.size(); ++i) {
+            uint32_t ready = poll_args[i].revents;
+            // no events attached to the pollfd object, continue to the next one.
+            if (ready == 0) {
+                continue;
+            }
+            // retrieve the con object using the fd mapping array.
+            Conn *conn = fd2conn[poll_args[i].fd];
+            // bitwise AND used to check if ready includes the POLLIN bit.
+            // read data from the client connection.
+            if (ready & POLLIN) {
+                assert(conn->want_read);
+                handle_read(conn);
+            }
+            // bitwise AND used to check if ready includes the POLLOUT bit.
+            // write data to the client connection.
+            if (ready & POLLOUT) {
+                assert(conn->want_write);
+                handle_write(conn);
+            }
+
+            // close the connection and set the corresponding conn object in the fd mapping array to NULL.
+            if (ready & POLLERR || conn->want_close) {
+                (void)close(conn->fd);
+                fd2conn[conn->fd] = NULL;
+                delete conn;
+            }
+        }
+    }
+    return 0;
+}
