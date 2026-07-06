@@ -51,7 +51,7 @@ static void fd_set_nb(int fd) {
 
     errno = 0;
     // set the flags for the file descriptor.
-    (void)fcntl(fd, F_SETFL, flags);
+    (void) fcntl(fd, F_SETFL, flags);
     if (errno) {
         die("fcntl error: error setting flags");
     }
@@ -86,3 +86,26 @@ struct Conn {
     std::vector<uint8_t> incoming;
     std::vector<uint8_t> outgoing;
 };
+
+/**
+ * Append data to the buffer.
+ *
+ * @param buf buffer to append the data to.
+ * @param data memory address pointing to beginning data bytes.
+ * @param len the length of the data.
+ */
+static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
+    // starting at the end of the buffer, inserts the bytes between pointers data and data + len (the length of the data).
+    buf.insert(buf.end(), data, data + len);
+}
+
+/**
+ * Remove data from the buffer.
+ *
+ * @param buf the buffer to remove bytes from.
+ * @param n the number of bytes to remove.
+ */
+static void buf_consume(std::vector<uint8_t> &buf, size_t n) {
+    // removes all data in the range between the pointers provided and shifts down remaining data.
+    buf.erase(buf.begin(), buf.begin() + n);
+}
