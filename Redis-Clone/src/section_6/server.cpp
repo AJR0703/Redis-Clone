@@ -144,3 +144,45 @@ static Conn *handle_accept(int fd) {
     conn->want_read = true;
     return conn;
 }
+
+/**
+ * Retrieves data from a connection incoming data buffer and writes to the outgoing data buffer.
+ *
+ * @param conn the Conn object, holding details for a client connection.
+ * @return false if there is not enough or too much data. true if the request is successfully processed.
+ */
+static bool try_one_request(Conn *conn) {
+    // if incoming buffer size is smaller than 32 bit int representing the length, the buffer will not be consumed.
+    if (conn->incoming.size() < 4) {
+        return false;
+    }
+
+    // retrieves the data length, copying the first 4 bytes to the len variable.
+    uint32_t len = 0;
+    memcpy(&len, conn->incoming.data(), 4);
+    // returns false and closes on len being too big
+    if (len > k_max_msg) {
+        msg("too long");
+        conn->want_close = true;
+        return false;
+    }
+
+    // check if the entire message has arrived (return false and wait for all data).
+    if (4 + len > conn->incoming.size()) {
+        return false;
+    }
+    // store the memory address for the actual data.
+    const uint8_t *request = &conn->incoming[4];
+
+    // print the request
+    printf("client says: len:%d data: %.*s\n",
+        len, len < 100 ? len : 100, request);
+
+    // append the length and the request to the outgoing buffer
+    buf_append(conn->outgoing, (const uint8_t *)&len, 4);
+    buf_append(conn->outgoing, request, len);
+
+    // remove the data from the incoming buffer.
+    buf_consume(conn-> incoming, 4 + len);
+    return true;
+}
