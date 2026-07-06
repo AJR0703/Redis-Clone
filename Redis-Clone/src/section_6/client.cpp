@@ -99,3 +99,44 @@ static int32_t send_req(int fd, const uint8_t *text, size_t len) {
     buf_append(wbuf, text, len);
     return write_all(fd, wbuf.data(), wbuf.size());
 }
+
+
+/**
+ * Constructs message received from the server.
+ * Extracts message length then payload.
+ *
+ * @param fd socket handle for socket.
+ * @return err from read_full or 0 on successful read.
+ */
+static int32_t read_res(int fd) {
+    std::vector<uint8_t> rbuf;
+    rbuf.resize(4);
+    errno = 0;
+
+    int32_t err = read_full(fd, &rbuf[0], 4);
+    if (err) {
+        if (errno == 0) {
+            msg("EOF");
+        } else {
+            msg("read() error");
+        }
+        return err;
+    }
+
+    uint32_t len = 0;
+    memcpy(&len, rbuf.data(), 4);
+    if (len > k_max_msg) {
+        msg("too long");
+        return -1;
+    }
+
+    rbuf.resize(4 + len);
+    err = read_full(fd, &rbuf[4], len);
+    if (err) {
+        msg("read() error");
+        return err;
+    }
+
+    printf("len:%u data:%.*s\n", len, len < 100 ? len : 100, &rbuf[4]);
+    return 0;
+}
